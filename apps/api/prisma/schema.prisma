@@ -1,0 +1,72 @@
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TournamentFormat {
+  SINGLE_ELIMINATION
+  GROUP_STAGE
+}
+
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ownedTournaments Tournament[]           @relation("TournamentOwner")
+  participations   TournamentParticipant[]
+}
+
+model Game {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  slug      String   @unique
+  createdAt DateTime @default(now())
+
+  tournaments Tournament[]
+}
+
+model Tournament {
+  id                      String           @id @default(uuid())
+  name                    String
+  description             String?
+  startsAt                DateTime
+  maxPlayers              Int
+  format                  TournamentFormat
+  seriesBestOf            Int              @default(1)
+  groupMatchesPerOpponent Int?
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+
+  gameId  String
+  ownerId String
+
+  game   Game   @relation(fields: [gameId], references: [id], onDelete: Restrict)
+  owner  User   @relation("TournamentOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  participants TournamentParticipant[]
+
+  @@index([gameId, startsAt])
+  @@index([startsAt])
+  @@index([ownerId])
+}
+
+model TournamentParticipant {
+  id           String   @id @default(uuid())
+  joinedAt     DateTime @default(now())
+  tournamentId String
+  userId       String
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, userId])
+  @@index([userId])
+}
