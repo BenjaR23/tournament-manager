@@ -7,7 +7,9 @@
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {
-    "build": "nest build",
+    "build": "prisma generate && nest build",
+    "pretest": "prisma generate",
+    "pretest:e2e": "prisma generate",
     "deploy": "nest deploy",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
@@ -33,6 +35,7 @@
     "rxjs": "^7.8.1"
   },
   "devDependencies": {
+    "@jest/globals": "^30.5.2",
     "@nestjs/cli": "^12.0.0",
     "@nestjs/mau": "^0.2.6",
     "@nestjs/schematics": "^12.0.0",
