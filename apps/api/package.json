@@ -10,6 +10,7 @@
     "build": "prisma generate && nest build",
     "pretest": "prisma generate",
     "pretest:e2e": "prisma generate",
+    "db:seed": "prisma db seed",
     "deploy": "nest deploy",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
@@ -55,6 +56,7 @@
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.2"
   }
 }
