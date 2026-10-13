@@ -5,8 +5,8 @@ import { PrismaService } from "../prisma/prisma.service.js";
 export class GamesService {
     constructor(private readonly prismaService: PrismaService) {}
 
-    async getGames() {
-        const games = await this.prismaService.game.findMany({
+    getGames() {
+        return this.prismaService.game.findMany({
             select: {
                 id: true,
                 name: true,
@@ -16,7 +16,5 @@ export class GamesService {
                 name: 'asc',
             }
         });
-
-        return games;
     }
 }

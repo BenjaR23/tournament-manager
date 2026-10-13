@@ -75,5 +75,15 @@ describe('GamesService', () => {
                 name: 'asc',
             },
         });
+        expect(prisma.game.findMany).toHaveBeenCalledTimes(1);
     })
+
+    it('should return an empty array whe no games exist', async () => {
+        prisma.game.findMany.mockResolvedValue([]);
+
+        const result = await gamesService.getGames();
+
+        expect(result).toEqual([]);
+        expect(prisma.game.findMany).toHaveBeenCalledTimes(1);
+    });
 })

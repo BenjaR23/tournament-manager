@@ -6,7 +6,7 @@ export class GamesController {
     constructor(private readonly gamesService: GamesService) {}
 
     @Get()
-    async getGames() {
+    getGames() {
         return this.gamesService.getGames();
     }
 }
