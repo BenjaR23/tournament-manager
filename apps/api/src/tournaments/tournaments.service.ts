@@ -11,7 +11,7 @@ interface ListTournamentsParams {
 }
 
 @Injectable()
-export class TournamentService {
+export class TournamentsService {
     constructor(private readonly prismaService: PrismaService) {}
 
     async getTournaments(params: ListTournamentsParams) {
