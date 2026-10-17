@@ -6,6 +6,7 @@ import path from 'node:path';
 
 dotenv.config({
     path: path.resolve(process.cwd(), '../../.env'),
+    quiet: true,
 });
 
 function createPrismaAdapter() {
