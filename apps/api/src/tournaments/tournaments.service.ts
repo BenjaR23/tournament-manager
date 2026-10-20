@@ -1,6 +1,8 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { fromZonedTime } from 'date-fns-tz';
+import { CreateTournamentDto } from "./dto/create-tournament.dto.js";
+import { TournamentFormat } from "../generated/prisma/enums.js";
 
 interface ListTournamentsParams {
     page: number,
@@ -108,5 +110,76 @@ export class TournamentsService {
                 totalPages,
             },
         };
+    };
+
+    async createTournament(body: CreateTournamentDto, ownerId: string) {
+        const startsAt = new Date(body.startsAt);
+
+        if (startsAt <= new Date()) {
+            throw new BadRequestException('La fecha del torneo deber ser futura');
+        }
+
+        if (body.format === TournamentFormat.SINGLE_ELIMINATION && body.groupMatchesPerOpponent !== undefined) {
+            throw new BadRequestException();
+        }
+
+        const groupMatchesPerOpponent =
+            body.format === TournamentFormat.GROUP_STAGE
+                ? body.groupMatchesPerOpponent
+                : null;
+
+        const game = await this.prismaService.game.findUnique({
+            where: { id: body.gameId },
+            select: { id: true },
+        });
+
+        if (!game) {
+            throw new NotFoundException();
+        }
+
+        const newTournament = await this.prismaService.tournament.create({
+            select: {
+                name: true,
+                description: true,
+                maxPlayers: true,
+                format: true,
+                seriesBestOf: true,
+                startsAt: true,
+                groupMatchesPerOpponent: true,
+                game: true,
+                owner: {
+                    select: {
+                        id: true,
+                        username: true,
+                    },
+                },
+                _count: {
+                    select: {
+                        participants: true,
+                    }
+                }
+            },
+            data: {
+                name: body.name,
+                description: body.description,
+                maxPlayers: body.maxPlayers,
+                format: body.format,
+                seriesBestOf: body.seriesBestOf,
+                startsAt,
+                groupMatchesPerOpponent,
+                game: {
+                    connect: {
+                        id: body.gameId
+                    },
+                },
+                owner: {
+                    connect: {
+                        id: ownerId,
+                    },
+                },
+            },
+        });
+
+        return newTournament;
     };
 }

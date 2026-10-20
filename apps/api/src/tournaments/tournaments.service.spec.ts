@@ -2,6 +2,8 @@ import { jest } from "@jest/globals";
 import { Test } from "@nestjs/testing";
 import { TournamentsService } from "./tournaments.service.js";
 import { PrismaService } from "../prisma/prisma.service.js";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { TournamentFormat } from "../generated/prisma/enums.js";
 
 describe('TournamentsService', () => {
     let tournamentsService: TournamentsService;
@@ -31,6 +33,10 @@ describe('TournamentsService', () => {
                 },
             }[]>>(),
             count: jest.fn<() => Promise<number>>(),
+            create: jest.fn<() => Promise<any>>(),
+        },
+        game: {
+            findUnique: jest.fn<() => Promise<{ id: string } | null>>(),
         },
     };
 
@@ -222,5 +228,99 @@ describe('TournamentsService', () => {
                 participantsOrder: 'desc',
             }),
         ).rejects.toThrow('Database error');
+    });
+
+    it('should create a tournament for the given owner and game', async () => {
+        const body = {
+            name: 'Pokemon Tournament',
+            description: 'Test tournament',
+            startsAt: '2026-11-15T18:00:00.000Z',
+            gameId: '3550efbe-28d0-4047-91f1-811d89e9ad26',
+            maxPlayers: 16,
+            format: TournamentFormat.SINGLE_ELIMINATION,
+            seriesBestOf: 3,
+        };
+
+        const ownerId = '2893-5723-5257';
+
+        const createdTournament = {
+            id: '1263-1244-7457',
+            name: body.name,
+            description: body.description,
+            startsAt: new Date(body.startsAt),
+            maxPlayers: body.maxPlayers,
+            format: body.format,
+            seriesBestOf: body.seriesBestOf,
+            groupMatchesPerOpponent: null,
+            game: {
+                id: body.gameId,
+                name: 'Pokemon',
+                slug: 'pokemon',
+            },
+            owner: {
+                id: ownerId,
+                username: 'Rodrigo',
+            },
+            _count: {
+                participants: 0,
+            },
+        };
+
+        prisma.game.findUnique.mockResolvedValue({ id: body.gameId });
+        prisma.tournament.create.mockResolvedValue(createdTournament);
+
+        const result = await tournamentsService.createTournament(body, ownerId);
+
+        expect(result).toEqual(createdTournament);
+
+        expect(prisma.game.findUnique).toHaveBeenCalledWith({
+            where: { id: body.gameId },
+            select: { id: true },
+        });
+
+        expect(prisma.tournament.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    name: body.name,
+                    startsAt: new Date(body.startsAt),
+                    game: { connect: { id: body.gameId }},
+                    owner: { connect: { id: ownerId }},
+                    groupMatchesPerOpponent: null,
+                }),
+            }),
+        );
+    });
+
+    it('should reject a tournament with a pas start date', async () => {
+        const body = {
+            name: 'Past Tournament',
+            startsAt: '2020-01-01T12:00:00.000Z',
+            gameId: '3550efbe-28d0-4047-91f1-811d89e9ad26',
+            maxPlayers: 16,
+            format: TournamentFormat.SINGLE_ELIMINATION,
+            seriesBestOf: 3,
+        };
+
+        await expect(tournamentsService.createTournament(body, '2893-5723-5257')).rejects.toThrow(BadRequestException);
+
+        expect(prisma.game.findUnique).not.toHaveBeenCalled();
+        expect(prisma.tournament.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a tournament when the game does not exist', async () => {
+        const body = {
+            name: 'Pokemon Tournament',
+            startsAt: '2026-11-15T18:00:00.000Z',
+            gameId: '3550efbe-28d0-4047-91f1-811d89e9ad26',
+            maxPlayers: 16,
+            format: TournamentFormat.SINGLE_ELIMINATION,
+            seriesBestOf: 3,
+        };
+
+        prisma.game.findUnique.mockResolvedValue(null);
+
+        await expect(tournamentsService.createTournament(body, '2893-5723-5257')).rejects.toThrow(NotFoundException);
+
+        expect(prisma.tournament.create).not.toHaveBeenCalled();
     });
 });
