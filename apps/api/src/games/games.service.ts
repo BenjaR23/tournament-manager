@@ -14,7 +14,7 @@ export class GamesService {
             },
             orderBy: {
                 name: 'asc',
-            }
+            },
         });
-    }
+    };
 }

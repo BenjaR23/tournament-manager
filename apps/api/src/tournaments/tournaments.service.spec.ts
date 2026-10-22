@@ -2,7 +2,7 @@ import { jest } from "@jest/globals";
 import { Test } from "@nestjs/testing";
 import { TournamentsService } from "./tournaments.service.js";
 import { PrismaService } from "../prisma/prisma.service.js";
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException, ConflictException } from "@nestjs/common";
 import { TournamentFormat } from "../generated/prisma/enums.js";
 
 describe('TournamentsService', () => {
@@ -34,14 +34,32 @@ describe('TournamentsService', () => {
             }[]>>(),
             count: jest.fn<() => Promise<number>>(),
             create: jest.fn<() => Promise<any>>(),
+            findUnique: jest.fn<() => Promise<{
+                id: string,
+                startsAt: Date,
+                maxPlayers: number,
+            }>>(),
         },
         game: {
             findUnique: jest.fn<() => Promise<{ id: string } | null>>(),
         },
+        tournamentParticipant: {
+            findUnique: jest.fn<() => Promise<{ id: string } | null>>(),
+            count: jest.fn<() => Promise<number>>(),
+            create: jest.fn<() => Promise<{
+                id: string,
+                tournamentId: string,
+                userId: string,
+                joinedAt: Date,
+            }>>(),
+        },
+        $queryRaw: jest.fn<() => Promise<{ id: string }[]>>(),
+        $transaction: jest.fn<(...args: any[]) => Promise<any>>(),
     };
 
     beforeEach(async () => {
         jest.resetAllMocks();
+        prisma.$transaction.mockImplementation(async (callback) => callback(prisma))
 
         const moduleRef = await Test.createTestingModule({
             providers: [
@@ -323,4 +341,113 @@ describe('TournamentsService', () => {
 
         expect(prisma.tournament.create).not.toHaveBeenCalled();
     });
+    
+    it('should register a user for a tournament', async () => {
+        const tournamentId = 'tournament-123';
+        const userId = 'user-123';
+
+        const tournament = {
+            id: tournamentId,
+            startsAt: new Date(Date.now() + 86_400_000),
+            maxPlayers: 16,
+        };
+
+        const participant = {
+            id: 'participant-123',
+            tournamentId,
+            userId,
+            joinedAt: new Date(),
+        };
+
+        prisma.$queryRaw.mockResolvedValue([{ id: tournamentId }]);
+        prisma.tournament.findUnique.mockResolvedValue(tournament);
+        prisma.tournamentParticipant.findUnique.mockResolvedValue(null);
+        prisma.tournamentParticipant.count.mockResolvedValue(5);
+        prisma.tournamentParticipant.create.mockResolvedValue(participant);
+
+        const result = await tournamentsService.joinTournament(
+            tournamentId,
+            userId,
+        );
+
+        expect(result).toEqual(participant);
+
+        expect(prisma.tournamentParticipant.create).toHaveBeenCalledWith({
+            select: {
+                id: true,
+                tournamentId: true,
+                userId: true,
+                joinedAt: true,
+            },
+            data: {
+                tournamentId,
+                userId,
+            },
+        });
+    });
+
+    it('should reject registration when the tournament does not exist', async () => {
+        prisma.$queryRaw.mockResolvedValue([]);
+
+        await expect(
+            tournamentsService.joinTournament('missing-tournament', 'user-123'),
+        ).rejects.toThrow(NotFoundException);
+
+        expect(prisma.tournamentParticipant.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject registration whe the tournament has already started', async () => {
+        const tournamentId = 'tournament-123';
+
+        prisma.$queryRaw.mockResolvedValue([{ id: tournamentId }]);
+        prisma.tournament.findUnique.mockResolvedValue({
+            id: tournamentId,
+            startsAt: new Date(Date.now() - 60_000),
+            maxPlayers: 16,
+        });
+
+        await expect(
+            tournamentsService.joinTournament(tournamentId, 'user-123'),
+        ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should reject registration when the user is already registered', async () => {
+        const tournamentId = 'tournament-123';
+
+        prisma.$queryRaw.mockResolvedValue([{ id: tournamentId }]);
+        prisma.tournament.findUnique.mockResolvedValue({
+            id: tournamentId,
+            startsAt: new Date(Date.now() + 86_400_000),
+            maxPlayers: 16,
+        });
+        prisma.tournamentParticipant.findUnique.mockResolvedValue({
+            id: 'participant-123',
+        });
+
+        await expect(
+            tournamentsService.joinTournament(tournamentId, 'user-123'),
+        ).rejects.toThrow(ConflictException);
+
+        expect(prisma.tournamentParticipant.count).not.toHaveBeenCalled();
+        expect(prisma.tournamentParticipant.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject registration when the tournament id full', async () => {
+        const tournamentId = 'tournament-123';
+
+        prisma.$queryRaw.mockResolvedValue([{ id: tournamentId }]);
+        prisma.tournament.findUnique.mockResolvedValue({
+            id: tournamentId,
+            startsAt: new Date(Date.now() + 86_400_000),
+            maxPlayers: 16,
+        });
+        prisma.tournamentParticipant.findUnique.mockResolvedValue(null);
+        prisma.tournamentParticipant.count.mockResolvedValue(16);
+
+        await expect(
+            tournamentsService.joinTournament(tournamentId, 'user-123'),
+        ).rejects.toThrow(ConflictException);
+
+        expect(prisma.tournamentParticipant.create).not.toHaveBeenCalled();
+    })
 });

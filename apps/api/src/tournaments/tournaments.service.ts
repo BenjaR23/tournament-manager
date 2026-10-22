@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
+import { Injectable, BadRequestException, NotFoundException, ConflictException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { fromZonedTime } from 'date-fns-tz';
 import { CreateTournamentDto } from "./dto/create-tournament.dto.js";
@@ -116,11 +116,11 @@ export class TournamentsService {
         const startsAt = new Date(body.startsAt);
 
         if (startsAt <= new Date()) {
-            throw new BadRequestException('La fecha del torneo deber ser futura');
+            throw new BadRequestException('The tournament start date must be in the future');
         }
 
         if (body.format === TournamentFormat.SINGLE_ELIMINATION && body.groupMatchesPerOpponent !== undefined) {
-            throw new BadRequestException();
+            throw new BadRequestException('You cannot configure matches per opponent for a single-elimination tournament');
         }
 
         const groupMatchesPerOpponent =
@@ -134,7 +134,7 @@ export class TournamentsService {
         });
 
         if (!game) {
-            throw new NotFoundException();
+            throw new NotFoundException('The selected game was not found');
         }
 
         const newTournament = await this.prismaService.tournament.create({
@@ -182,4 +182,84 @@ export class TournamentsService {
 
         return newTournament;
     };
+
+    async joinTournament(tournamentId: string, userId: string) {
+        return this.prismaService.$transaction(async (tx) => {
+            // Lock the tournament row to prevent concurrent registrations
+            const tournaments = await tx.$queryRaw<{ id: string }[]>`
+                SELECT "id"
+                FROM "Tournament"
+                WHERE "id" = ${tournamentId}
+                FOR UPDATE
+            `;
+
+            if (tournaments.length === 0) {
+                throw new NotFoundException('Tournament not found');
+            }
+
+            const tournament = await tx.tournament.findUnique({
+                select: {
+                    id: true,
+                    startsAt: true,
+                    maxPlayers: true,
+                },
+                where: {
+                    id: tournamentId,
+                },
+            });
+
+            if (!tournament) {
+                throw new NotFoundException('Tournament not found');
+            }
+
+            if (tournament.startsAt <= new Date()) {
+                throw new BadRequestException(
+                    'You cannot join a tournament that has already started',
+                );
+            }
+
+            const isRegistered = await tx.tournamentParticipant.findUnique({
+                select: {
+                    id: true,
+                },
+                where: {
+                    tournamentId_userId: {
+                        tournamentId,
+                        userId,
+                    },
+                },
+            });
+
+            if (isRegistered) {
+                throw new ConflictException(
+                    'You are already registered for this tournament',
+                );
+            }
+
+            const participantCount = await tx.tournamentParticipant.count({
+                where: {
+                    tournamentId,
+                },
+            });
+
+            if (participantCount >= tournament.maxPlayers) {
+                throw new ConflictException(
+                    'The tournament has reached its maximum capacity',
+                );
+            }
+
+            return tx.tournamentParticipant.create({
+                select: {
+                    id: true,
+                    tournamentId: true,
+                    userId: true,
+                    joinedAt: true,
+                },
+                data: {
+                    tournamentId,
+                    userId,
+                },
+            });
+        });
+    }
 }
