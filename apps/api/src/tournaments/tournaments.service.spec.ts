@@ -37,7 +37,7 @@ describe('TournamentsService', () => {
             findUnique: jest.fn<() => Promise<{
                 id: string,
                 startsAt: Date,
-                maxPlayers: number,
+                maxPlayers?: number,
             }>>(),
         },
         game: {
@@ -51,6 +51,12 @@ describe('TournamentsService', () => {
                 tournamentId: string,
                 userId: string,
                 joinedAt: Date,
+            }>>(),
+            delete: jest.fn<() => Promise<{
+                tournamentId_userId: {
+                    tournamentId: string,
+                    userId: string,
+                },
             }>>(),
         },
         $queryRaw: jest.fn<() => Promise<{ id: string }[]>>(),
@@ -309,7 +315,7 @@ describe('TournamentsService', () => {
         );
     });
 
-    it('should reject a tournament with a pas start date', async () => {
+    it('should reject a tournament with a past start date', async () => {
         const body = {
             name: 'Past Tournament',
             startsAt: '2020-01-01T12:00:00.000Z',
@@ -449,5 +455,108 @@ describe('TournamentsService', () => {
         ).rejects.toThrow(ConflictException);
 
         expect(prisma.tournamentParticipant.create).not.toHaveBeenCalled();
+    });
+
+    it('should leave a tournament successfully', async () => {
+        const tournamentId = 'tournament-123';
+        const userId = 'user-123';
+
+        prisma.$queryRaw.mockResolvedValue([{ id: tournamentId}]);
+        prisma.tournament.findUnique.mockResolvedValue({
+            id: tournamentId,
+            startsAt: new Date(Date.now() + 48 * 60 * 60 *1000),
+        });
+        prisma.tournamentParticipant.findUnique.mockResolvedValue({ id: 'participant-123' });
+        prisma.tournamentParticipant.delete.mockResolvedValue({
+            tournamentId_userId: {
+                tournamentId,
+                userId,
+            },
+        });
+
+        const result = await tournamentsService.leaveTournament(
+            tournamentId,
+            userId,
+        );
+
+        expect(result).toEqual({
+            message: 'You have left the tournament successfully',
+        });
+
+        expect(prisma.tournamentParticipant.delete).toHaveBeenCalledTimes(1);
+
+        expect(prisma.tournamentParticipant.delete).toHaveBeenCalledWith({
+            where: {
+                tournamentId_userId: {
+                    tournamentId,
+                    userId,
+                },
+            },
+        });
+    });
+
+    it('should reject leaving when the tournament does not exist', async () => {
+        prisma.$queryRaw.mockResolvedValue([]);
+
+        await expect(
+            tournamentsService.leaveTournament(
+                'missing-tournament',
+                'user-123',
+            ),
+        ).rejects.toThrow(NotFoundException);
+
+        expect(prisma.tournament.findUnique).not.toHaveBeenCalled();
+        expect(prisma.tournamentParticipant.delete).not.toHaveBeenCalled();
+    });
+
+    it('should reject leaving when the tournament has already started', async () => {
+        const tournamentId = 'tournament-123';
+
+        prisma.$queryRaw.mockResolvedValue([{ id: tournamentId }]);
+        prisma.tournament.findUnique.mockResolvedValue({
+            id: tournamentId,
+            startsAt: new Date(Date.now() - 60_000),
+        });
+
+        await expect(
+            tournamentsService.leaveTournament(tournamentId, 'user-123'),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(prisma.tournamentParticipant.findUnique).not.toHaveBeenCalled();
+        expect(prisma.tournamentParticipant.delete).not.toHaveBeenCalled();
+    });
+
+    it('should reject leaving when less tha 24 hours remain before the tournament', async () => {
+        const tournamentId = 'tournament-123';
+
+        prisma.$queryRaw.mockResolvedValue([{ id: tournamentId }]);
+        prisma.tournament.findUnique.mockResolvedValue({
+            id: tournamentId,
+            startsAt: new Date(Date.now() + 12 * 60 * 60 * 1000),
+        });
+
+        await expect(
+            tournamentsService.leaveTournament(tournamentId, 'user-123'),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(prisma.tournamentParticipant.findUnique).not.toHaveBeenCalled();
+        expect(prisma.tournamentParticipant.delete).not.toHaveBeenCalled();
+    });
+
+    it('should reject leaving when the user is not registered', async () => {
+        const tournamentId = 'tournament-123';
+
+        prisma.$queryRaw.mockResolvedValue([{ id: tournamentId }]);
+        prisma.tournament.findUnique.mockResolvedValue({
+            id: tournamentId,
+            startsAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+        });
+        prisma.tournamentParticipant.findUnique.mockResolvedValue(null);
+
+        await expect(
+            tournamentsService.leaveTournament(tournamentId, 'user-123'),
+        ).rejects.toThrow(NotFoundException);
+
+        expect(prisma.tournamentParticipant.delete).not.toHaveBeenCalled();
     })
 });
