@@ -1,4 +1,4 @@
-import { Controller, Body, Get, Post, Query, Req, UseGuards, Param } from "@nestjs/common";
+import { Controller, Body, Get, Post, Query, Req, UseGuards, Param, Delete } from "@nestjs/common";
 import { ListTournamentsQueryDto } from "./dto/list-tournaments-query.dto.js";
 import { TournamentsService } from "./tournaments.service.js";
 import { CreateTournamentDto } from "./dto/create-tournament.dto.js";
@@ -30,5 +30,14 @@ export class TournamentsController {
         @Req() req: Request & { user: { userId: string } },
     ) {
         return this.tournamentsService.joinTournament(id, req.user.userId);
+    }
+
+    @Delete(':id/participants')
+    @UseGuards(JwtAuthGuard)
+    leaveTournament(
+        @Param('id') id: string,
+        @Req() req: Request & { user: { userId: string } },
+    ) {
+        return this.tournamentsService.leaveTournament(id, req.user.userId);
     }
 }

@@ -262,4 +262,80 @@ export class TournamentsService {
             });
         });
     }
+
+    async leaveTournament(tournamentId: string, userId: string) {
+        return this.prismaService.$transaction(async (tx) => {
+            const tournaments = await tx.$queryRaw<{ id: string }[]>`
+                SELECT "id"
+                FROM "Tournament"
+                WHERE "id" = ${tournamentId}
+                FOR UPDATE
+            `;
+
+            if (tournaments.length === 0) {
+                throw new NotFoundException('Tournament not found')
+            }
+
+            const tournament = await tx.tournament.findUnique({
+                select: {
+                    id: true,
+                    startsAt: true,
+                },
+                where: {
+                    id: tournamentId,
+                },
+            });
+
+            if (!tournament) {
+                throw new NotFoundException('Tournament not found');
+            }
+
+            const now = Date.now();
+            const startsAt = tournament.startsAt.getTime();
+            const minimumNotice = 24 * 60 * 60 * 1000;
+
+            if (startsAt <= now) {
+                throw new BadRequestException(
+                    'You cannot leave a tournament that has already started',
+                );
+            }
+
+            if (startsAt - now < minimumNotice) {
+                throw new BadRequestException(
+                    'You can only leave a tournament at least 24 hours before it starts'
+                );
+            }
+
+            const participation = await tx.tournamentParticipant.findUnique({
+                where: {
+                    tournamentId_userId: {
+                        tournamentId,
+                        userId,
+                    },
+                },
+                select: {
+                    id: true,
+                },
+            });
+
+            if (!participation) {
+                throw new NotFoundException(
+                    'You are not registered for this tournament',
+                );
+            }
+
+            await tx.tournamentParticipant.delete({
+                where: {
+                    tournamentId_userId: {
+                        tournamentId,
+                        userId,
+                    },
+                },
+            });
+
+            return {
+                message: 'You have left the tournament successfully',
+            };
+        });
+    }
 }
