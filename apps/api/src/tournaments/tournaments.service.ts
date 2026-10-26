@@ -9,7 +9,7 @@ interface ListTournamentsParams {
     limit: number,
     game?: string,
     date?: string,
-    participantsOrder: 'asc' | 'desc',
+    participantsOrder?: 'asc' | 'desc',
 }
 
 @Injectable()
@@ -17,6 +17,14 @@ export class TournamentsService {
     constructor(private readonly prismaService: PrismaService) {}
 
     async getTournaments(params: ListTournamentsParams) {
+        const page = Number.isInteger(params.page) && params.page >= 1
+            ? params.page
+            : 1;
+
+        const limit = Number.isInteger(params.limit) && params.limit >= 1
+            ? params.limit
+            : 12;
+
         let start: Date | undefined;
         let end: Date | undefined;
 
@@ -57,11 +65,19 @@ export class TournamentsService {
             }),
         };
 
+        const orderBy = [
+            { startsAt: 'asc' as const },
+            ...(params.participantsOrder
+                ? [{ participants: { _count: params.participantsOrder } }]
+                : []),
+            { id: 'asc' as const },
+        ];
+
         const [tournaments, total] = await Promise.all([
             this.prismaService.tournament.findMany({
                 where,
-                skip: (params.page - 1) * params.limit,
-                take: params.limit,
+                skip: (page - 1) * limit,
+                take: limit,
                 select: {
                     id: true,
                     name: true,
@@ -90,11 +106,7 @@ export class TournamentsService {
                         },
                     },
                 },
-                orderBy: [
-                    { startsAt: 'asc'},
-                    { participants: { _count: params.participantsOrder } },
-                    { id: 'asc' },
-                ],
+                orderBy,
             }),
             this.prismaService.tournament.count({ where }),
         ]);
@@ -104,8 +116,8 @@ export class TournamentsService {
         return {
             data: tournaments,
             meta: {
-                page: params.page,
-                limit: params.limit,
+                page,
+                limit,
                 total,
                 totalPages,
             },

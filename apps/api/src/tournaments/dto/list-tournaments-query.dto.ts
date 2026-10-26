@@ -24,7 +24,7 @@ export class ListTournamentsQueryDto {
 
     @IsOptional()
     @IsIn(['asc', 'desc'])
-    participantsOrder: 'asc' | 'desc' = 'desc';
+    participantsOrder?: 'asc' | 'desc';
 }
 
 function isRealDate(value: string): boolean {
