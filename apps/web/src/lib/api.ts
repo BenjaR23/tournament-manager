@@ -1,6 +1,9 @@
+
 const API_URL = (
   import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
 ).replace(/\/$/, '')
+
+const TOKEN_KEY = 'tournament-manager-token'
 
 export class ApiError extends Error {
   public readonly status: number
@@ -12,16 +15,37 @@ export class ApiError extends Error {
   }
 }
 
+export function getStoredToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export function storeToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token)
+}
+
+export function clearStoredToken(): void {
+  localStorage.removeItem(TOKEN_KEY)
+}
+
 export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
+  const headers = new Headers(init?.headers)
+
+  if (init?.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
+
+  const token = getStoredToken()
+
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: {
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init?.headers,
-    },
+    headers,
   })
 
   if (!response.ok) {
@@ -47,7 +71,7 @@ export async function apiFetch<T>(
         }
       }
     } catch {
-      // Si el servidor no devuelve JSON, conservamos el error genérico.
+      // Conservamos el mensaje genérico si el servidor no devuelve JSON.
     }
 
     throw new ApiError(message, response.status)
