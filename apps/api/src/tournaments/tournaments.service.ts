@@ -70,6 +70,7 @@ export class TournamentsService {
             ...(params.participantsOrder
                 ? [{ participants: { _count: params.participantsOrder } }]
                 : []),
+            { startsAt: 'asc' as const},
             { id: 'asc' as const },
         ];
 
@@ -111,7 +112,7 @@ export class TournamentsService {
             this.prismaService.tournament.count({ where }),
         ]);
 
-        const totalPages = Math.ceil(total / params.limit);
+        const totalPages = Math.ceil(total / limit);
 
         return {
             data: tournaments,
@@ -122,6 +123,48 @@ export class TournamentsService {
                 totalPages,
             },
         };
+    };
+
+    async getTournamentDetail(id: string) {
+        const tournamentDetail = await this.prismaService.tournament.findUnique({
+            where: {
+                id,
+            },
+            select: {
+                id: true,
+                name: true,
+                description: true,
+                startsAt: true,
+                maxPlayers: true,
+                format: true,
+                seriesBestOf: true,
+                groupMatchesPerOpponent: true,
+                owner: {
+                    select: {
+                        id: true,
+                        username: true,
+                    },
+                },
+                game: {
+                    select: {
+                        id: true,
+                        name: true,
+                        slug: true,
+                    },
+                },
+                _count: {
+                    select: {
+                        participants: true,
+                    },
+                },
+            },
+        });
+
+        if (!tournamentDetail) {
+            throw new NotFoundException('Tournament not found');
+        }
+
+        return tournamentDetail;
     };
 
     async createTournament(body: CreateTournamentDto, ownerId: string) {
