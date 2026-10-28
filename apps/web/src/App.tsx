@@ -5,6 +5,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import CreateTournament from "./pages/CreateTournament";
 import TournamentDetail from "./pages/TournamentDetail";
+import RequireAuth from "./components/auth/RequireAuth";
 
 function NotFound() {
   return (
@@ -29,7 +30,11 @@ export default function App() {
         <Route path="/register" element={<Register />} />
         <Route
           path="/tournaments/create"
-          element={<CreateTournament />}
+          element={
+            <RequireAuth>
+              <CreateTournament />
+            </RequireAuth>
+          }
         />
         <Route
           path="/tournaments/:id"
