@@ -1,4 +1,4 @@
-import { Controller, Body, Get, Post, Query, Req, UseGuards, Param, Delete } from "@nestjs/common";
+import { Controller, Body, Get, Post, Query, Req, UseGuards, Param, Delete, ParseUUIDPipe } from "@nestjs/common";
 import { ListTournamentsQueryDto } from "./dto/list-tournaments-query.dto.js";
 import { TournamentsService } from "./tournaments.service.js";
 import { CreateTournamentDto } from "./dto/create-tournament.dto.js";
@@ -14,6 +14,11 @@ export class TournamentsController {
         return this.tournamentsService.getTournaments(query);
     }
 
+    @Get(':id')
+    getTournamentDetail(@Param('id', new ParseUUIDPipe()) id: string) {
+        return this.tournamentsService.getTournamentDetail(id);
+    }
+
     @Post()
     @UseGuards(JwtAuthGuard)
     createTournament(
@@ -26,7 +31,7 @@ export class TournamentsController {
     @Post(':id/participants')
     @UseGuards(JwtAuthGuard)
     joinTournament(
-        @Param('id') id: string,
+        @Param('id', new ParseUUIDPipe()) id: string,
         @Req() req: Request & { user: { userId: string } },
     ) {
         return this.tournamentsService.joinTournament(id, req.user.userId);
@@ -35,7 +40,7 @@ export class TournamentsController {
     @Delete(':id/participants')
     @UseGuards(JwtAuthGuard)
     leaveTournament(
-        @Param('id') id: string,
+        @Param('id', new ParseUUIDPipe()) id: string,
         @Req() req: Request & { user: { userId: string } },
     ) {
         return this.tournamentsService.leaveTournament(id, req.user.userId);
