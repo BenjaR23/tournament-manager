@@ -70,7 +70,6 @@ export class TournamentsService {
             ...(params.participantsOrder
                 ? [{ participants: { _count: params.participantsOrder } }]
                 : []),
-            { startsAt: 'asc' as const},
             { id: 'asc' as const },
         ];
 
@@ -125,7 +124,7 @@ export class TournamentsService {
         };
     };
 
-    async getTournamentDetail(id: string) {
+    async getTournamentDetail(id: string, userId?: string) {
         const tournamentDetail = await this.prismaService.tournament.findUnique({
             where: {
                 id,
@@ -164,7 +163,28 @@ export class TournamentsService {
             throw new NotFoundException('Tournament not found');
         }
 
-        return tournamentDetail;
+        let isRegistered = false;
+
+        if (userId) {
+            const participant = await this.prismaService.tournamentParticipant.findUnique({
+                where: {
+                    tournamentId_userId: {
+                        tournamentId: id,
+                        userId,
+                    },
+                },
+                select: {
+                    id: true,
+                },
+            });
+
+            isRegistered = Boolean(participant);
+        }
+
+        return {
+            ...tournamentDetail,
+            isRegistered,
+        }
     };
 
     async createTournament(body: CreateTournamentDto, ownerId: string) {
