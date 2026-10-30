@@ -1,9 +1,10 @@
-
 const API_URL = (
   import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
 ).replace(/\/$/, '')
 
 const TOKEN_KEY = 'tournament-manager-token'
+
+export const AUTH_SESSION_EXPIRED_EVENT = 'auth:session-expired'
 
 export class ApiError extends Error {
   public readonly status: number
@@ -47,6 +48,12 @@ export async function apiFetch<T>(
     ...init,
     headers,
   })
+
+  if (response.status === 401 && headers.has('Authorization')) {
+    window.dispatchEvent(
+      new Event(AUTH_SESSION_EXPIRED_EVENT),
+    )
+  }
 
   if (!response.ok) {
     let message = `Error al consultar la API (${response.status})`

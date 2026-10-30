@@ -1,6 +1,14 @@
-import { useState, type ReactNode } from 'react'
-import { AuthContext, type AuthContextValue } from './auth-context'
-import { apiFetch, clearStoredToken, storeToken } from '../lib/api'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import {
+  AuthContext,
+  type AuthContextValue,
+} from './auth-context'
+import {
+  apiFetch,
+  clearStoredToken,
+  storeToken,
+  AUTH_SESSION_EXPIRED_EVENT,
+} from '../lib/api'
 import type {
   AuthUser,
   LoginPayload,
@@ -37,7 +45,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(result.user)
   }
 
-  
   async function register(
     payload: RegisterPayload,
   ): Promise<RegisterResponse> {
@@ -46,7 +53,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       body: JSON.stringify(payload),
     })
 
-    // Una vez creada la cuenta, iniciamos sesión automáticamente.
     await login({
       usernameOrEmail: payload.email,
       password: payload.password,
@@ -55,12 +61,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return result
   }
 
-
-  function logout() {
+  const logout = useCallback(() => {
     clearStoredToken()
     localStorage.removeItem('tournament-manager-user')
     setUser(null)
-  }
+  }, [])
+
+  useEffect(() => {
+    function handleSessionExpired() {
+      logout()
+    }
+
+    window.addEventListener(
+      AUTH_SESSION_EXPIRED_EVENT,
+      handleSessionExpired,
+    )
+
+    return () => {
+      window.removeEventListener(
+        AUTH_SESSION_EXPIRED_EVENT,
+        handleSessionExpired,
+      )
+    }
+  }, [logout])
 
   const value: AuthContextValue = {
     user,
