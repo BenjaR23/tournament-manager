@@ -2,7 +2,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { ApiError } from '../lib/api'
-import { useAuth } from '../contexts/auth-context'
+import { useAuth } from '../context/auth-context'
 
 function Login() {
   const { login } = useAuth()

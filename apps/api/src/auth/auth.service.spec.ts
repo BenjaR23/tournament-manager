@@ -162,7 +162,7 @@ describe('AuthService', () => {
         const databaseError = new Error('Database unavailable');
 
         prisma.user.findFirst.mockResolvedValue(null);
-        prisma.user.create.mockRejectedValue(databaseError),
+        prisma.user.create.mockRejectedValue(databaseError);
 
         await expect(
             authService.register({

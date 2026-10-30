@@ -1,7 +1,7 @@
 
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router'
-import { useAuth } from '../../contexts/auth-context'
+import { useAuth } from '../../context/auth-context'
 
 function Navbar() {
   const { user, isAuthenticated, logout } = useAuth()

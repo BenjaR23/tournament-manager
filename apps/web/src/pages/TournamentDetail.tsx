@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router'
-import { ApiError, apiFetch } from '../lib/api'
-import type { Tournament } from '../types/tournament'
+import { useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router';
+import { ApiError, apiFetch } from '../lib/api';
+import { useAuth } from '../context/auth-context';
+import type { Tournament } from '../types/tournament';
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('es-CL', {
@@ -21,13 +22,37 @@ function formatSeries(seriesBestOf: number) {
   return `Al mejor de ${seriesBestOf} (Bo${seriesBestOf})`
 }
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof ApiError) {
+    return error.message
+  }
+
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  return 'Ocurrió un error inesperado. Inténtalo nuevamente.'
+}
+
 function TournamentDetail() {
   const { id } = useParams()
+  const { isAuthenticated } = useAuth()
 
   const [tournament, setTournament] = useState<Tournament | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [retryCount, setRetryCount] = useState(0)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [actionError, setActionError] = useState('')
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setNow(Date.now())
+    }, 60_000)
+
+    return () => window.clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -59,11 +84,7 @@ function TournamentDetail() {
         if (error instanceof ApiError && error.status === 404) {
           setError('El torneo que buscas no existe o ya no está disponible.')
         } else {
-          setError(
-            error instanceof Error
-              ? error.message
-              : 'No fue posible cargar los detalles del torneo.',
-          )
+          setError(getErrorMessage(error))
         }
       } finally {
         if (!cancelled) {
@@ -78,6 +99,78 @@ function TournamentDetail() {
       cancelled = true
     }
   }, [id, retryCount])
+
+  async function handleJoinTournament() {
+    if (!id || !tournament || isSubmitting) return
+
+    setIsSubmitting(true)
+    setActionError('')
+
+    try {
+      await apiFetch<unknown>(`/tournaments/${encodeURIComponent(id)}/participants`, {
+        method: 'POST',
+      })
+
+      setTournament((current) => {
+        if (!current) return current
+
+        return {
+          ...current,
+          isRegistered: true,
+          _count: {
+            ...current._count,
+            participants: current._count.participants + 1,
+          },
+        }
+      })
+    } catch (error) {
+      setActionError(getErrorMessage(error))
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  async function handleLeaveTournament() {
+    if (!id || !tournament || isSubmitting) return
+
+    setIsSubmitting(true)
+    setActionError('')
+
+    try {
+      await apiFetch<unknown>(`/tournaments/${encodeURIComponent(id)}/participants`, {
+        method: 'DELETE',
+      })
+
+      setTournament((current) => {
+        if (!current) return current
+
+        return {
+          ...current,
+          isRegistered: false,
+          _count: {
+            ...current._count,
+            participants: Math.max(0, current._count.participants - 1),
+          },
+        }
+      })
+    } catch (error) {
+      setActionError(getErrorMessage(error))
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const startsAt = tournament
+    ? new Date(tournament.startsAt).getTime()
+    : 0
+
+  const minimumNotice = 24 * 60 * 60 * 1000
+
+  const hasStarted = startsAt <= now
+  const isFull = tournament
+    ? tournament._count.participants >= tournament.maxPlayers
+    : false
+  const canLeave = startsAt - now >= minimumNotice
 
   return (
     <section className="mx-auto max-w-5xl py-8 sm:py-12">
@@ -161,9 +254,7 @@ function TournamentDetail() {
                   Organiza <strong className="text-white">{tournament.owner.username}</strong>
                 </span>
 
-                <span>
-                  {formatDate(tournament.startsAt)}
-                </span>
+                <span>{formatDate(tournament.startsAt)}</span>
               </div>
             </div>
           </header>
@@ -204,7 +295,7 @@ function TournamentDetail() {
               </div>
 
               <p className="mt-3 text-xs text-zinc-500">
-                {tournament._count.participants >= tournament.maxPlayers
+                {isFull
                   ? 'El torneo ha alcanzado su capacidad máxima.'
                   : `Quedan ${tournament.maxPlayers - tournament._count.participants} plazas disponibles.`}
               </p>
@@ -244,6 +335,92 @@ function TournamentDetail() {
               </p>
             </article>
           </div>
+
+          <section className="rounded-2xl border border-white/10 bg-[#17171e] p-6 sm:p-8">
+            <h2 className="text-xl font-bold text-white">
+              Participación
+            </h2>
+
+            <p className="mt-2 text-sm leading-6 text-zinc-400">
+              {tournament.isRegistered
+                ? 'Ya estás inscrito en este torneo.'
+                : 'Consulta la disponibilidad y participa en este torneo.'}
+            </p>
+
+            {actionError && (
+              <p
+                role="alert"
+                className="mt-4 rounded-xl border border-red-400/20 bg-red-400/5 p-3 text-sm text-red-300"
+              >
+                {actionError}
+              </p>
+            )}
+
+            {!isAuthenticated ? (
+              <div className="mt-5">
+                <p className="text-sm text-zinc-400">
+                  Inicia sesión para inscribirte en este torneo.
+                </p>
+
+                <Link
+                  to="/login"
+                  className="mt-4 inline-flex rounded-xl bg-violet-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-violet-400"
+                >
+                  Iniciar sesión
+                </Link>
+              </div>
+            ) : tournament.isRegistered ? (
+              <div className="mt-5">
+                {hasStarted ? (
+                  <p className="text-sm text-amber-300">
+                    El torneo ya comenzó. Ya no puedes retirarte.
+                  </p>
+                ) : !canLeave ? (
+                  <p className="text-sm text-amber-300">
+                    Ya no puedes retirarte: faltan menos de 24 horas para el inicio.
+                  </p>
+                ) : (
+                  <p className="text-sm text-emerald-300">
+                    Tu plaza está reservada.
+                  </p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleLeaveTournament}
+                  disabled={!canLeave || hasStarted || isSubmitting}
+                  className="mt-4 rounded-xl border border-red-400/30 bg-red-400/10 px-5 py-3 text-sm font-semibold text-red-300 transition hover:bg-red-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {isSubmitting ? 'Procesando...' : 'Retirarme del torneo'}
+                </button>
+              </div>
+            ) : (
+              <div className="mt-5">
+                {hasStarted ? (
+                  <p className="text-sm text-amber-300">
+                    Este torneo ya comenzó y no admite nuevas inscripciones.
+                  </p>
+                ) : isFull ? (
+                  <p className="text-sm text-amber-300">
+                    No quedan plazas disponibles en este torneo.
+                  </p>
+                ) : (
+                  <p className="text-sm text-zinc-400">
+                    Hay plazas disponibles. ¡Anímate a participar!
+                  </p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleJoinTournament}
+                  disabled={hasStarted || isFull || isSubmitting}
+                  className="mt-4 rounded-xl bg-violet-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {isSubmitting ? 'Procesando...' : 'Inscribirme al torneo'}
+                </button>
+              </div>
+            )}
+          </section>
 
           <section className="rounded-2xl border border-white/10 bg-[#17171e] p-6 sm:p-8">
             <h2 className="text-xl font-bold text-white">

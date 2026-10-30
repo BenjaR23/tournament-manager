@@ -21,6 +21,7 @@ export interface Tournament {
     _count: {
         participants: number
     }
+    isRegistered: boolean
 }
 
 export interface PaginatedResponse<T> {
