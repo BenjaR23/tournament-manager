@@ -469,7 +469,7 @@ export class TournamentsService {
             });
 
             return {
-                message: 'Tournament deleted succesfully',
+                message: 'Tournament deleted successfully',
                 tournamentId: deletedTournament.id,
             };
         })
