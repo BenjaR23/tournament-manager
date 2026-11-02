@@ -1,5 +1,6 @@
+
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useNavigate, useParams } from 'react-router';
 import { ApiError, apiFetch } from '../lib/api';
 import { useAuth } from '../context/auth-context';
 import type { Tournament } from '../types/tournament';
@@ -36,15 +37,31 @@ function getErrorMessage(error: unknown) {
 
 function TournamentDetail() {
   const { id } = useParams()
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, user } = useAuth()
+  const navigate = useNavigate()
 
   const [tournament, setTournament] = useState<Tournament | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [retryCount, setRetryCount] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [actionError, setActionError] = useState('')
+  const [deleteError, setDeleteError] = useState('')
   const [now, setNow] = useState(() => Date.now())
+
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [deleteCountdown, setDeleteCountdown] = useState(5)
+
+  useEffect(() => {
+    if (!isDeleteModalOpen || deleteCountdown <= 0) return
+
+    const timeout = window.setTimeout(() => {
+      setDeleteCountdown((current) => Math.max(0, current - 1))
+    }, 1000)
+
+    return () => window.clearTimeout(timeout)
+  }, [isDeleteModalOpen, deleteCountdown])
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -107,9 +124,12 @@ function TournamentDetail() {
     setActionError('')
 
     try {
-      await apiFetch<unknown>(`/tournaments/${encodeURIComponent(id)}/participants`, {
-        method: 'POST',
-      })
+      await apiFetch<unknown>(
+        `/tournaments/${encodeURIComponent(id)}/participants`,
+        {
+          method: 'POST',
+        },
+      )
 
       setTournament((current) => {
         if (!current) return current
@@ -137,9 +157,12 @@ function TournamentDetail() {
     setActionError('')
 
     try {
-      await apiFetch<unknown>(`/tournaments/${encodeURIComponent(id)}/participants`, {
-        method: 'DELETE',
-      })
+      await apiFetch<unknown>(
+        `/tournaments/${encodeURIComponent(id)}/participants`,
+        {
+          method: 'DELETE',
+        },
+      )
 
       setTournament((current) => {
         if (!current) return current
@@ -160,6 +183,36 @@ function TournamentDetail() {
     }
   }
 
+  function handleDeleteTournament() {
+    if (!id || !tournament || isDeleting) return
+
+    setDeleteCountdown(5)
+    setDeleteError('')
+    setIsDeleteModalOpen(true)
+  }
+
+  async function confirmDeleteTournament() {
+    if (!id || !tournament || isDeleting || deleteCountdown > 0) return
+
+    setIsDeleting(true)
+    setDeleteError('')
+
+    try {
+      await apiFetch<unknown>(
+        `/tournaments/${encodeURIComponent(id)}`,
+        {
+          method: 'DELETE',
+        },
+      )
+
+      navigate('/')
+    } catch (error) {
+      setDeleteError(getErrorMessage(error))
+      setIsDeleting(false)
+      setIsDeleteModalOpen(false)
+    }
+  }
+
   const startsAt = tournament
     ? new Date(tournament.startsAt).getTime()
     : 0
@@ -167,10 +220,14 @@ function TournamentDetail() {
   const minimumNotice = 24 * 60 * 60 * 1000
 
   const hasStarted = startsAt <= now
+
   const isFull = tournament
     ? tournament._count.participants >= tournament.maxPlayers
     : false
+
   const canLeave = startsAt - now >= minimumNotice
+  const isOwner = user?.id === tournament?.owner.id
+  const canDelete = startsAt - now >= minimumNotice
 
   return (
     <section className="mx-auto max-w-5xl py-8 sm:py-12">
@@ -224,6 +281,68 @@ function TournamentDetail() {
         </div>
       ) : tournament ? (
         <div className="mt-8 space-y-6">
+
+          {isDeleteModalOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+              onClick={() => {
+                if (!isDeleting) setIsDeleteModalOpen(false)
+              }}
+            >
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="delete-modal-title"
+                aria-describedby="delete-modal-description"
+                className="w-full max-w-md rounded-2xl border border-white/10 bg-[#1b1b24] p-6 shadow-2xl sm:p-8"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-red-400/20 bg-red-400/10">
+                  <span className="text-2xl text-red-400">!</span>
+                </div>
+
+                <h2
+                  id="delete-modal-title"
+                  className="mt-5 text-xl font-bold text-white"
+                >
+                  ¿Eliminar torneo?
+                </h2>
+
+                <p
+                  id="delete-modal-description"
+                  className="mt-3 text-sm leading-6 text-zinc-400"
+                >
+                  Estás a punto de eliminar <strong className="text-white">{tournament.name}</strong>.
+                  Esta acción también eliminará todas las inscripciones asociadas
+                  y no se puede deshacer.
+                </p>
+
+                <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setIsDeleteModalOpen(false)}
+                    disabled={isDeleting}
+                    className="rounded-xl border border-white/10 px-5 py-3 text-sm font-semibold text-zinc-300 transition hover:bg-white/5 disabled:opacity-40"
+                  >
+                    Cancelar
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={confirmDeleteTournament}
+                    disabled={deleteCountdown > 0 || isDeleting}
+                    className="rounded-xl border border-red-400/30 bg-red-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {isDeleting
+                      ? 'Eliminando...'
+                      : deleteCountdown > 0
+                        ? `Confirmar (${deleteCountdown}s)`
+                        : 'Sí, eliminar torneo'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           <header className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-violet-950/70 via-[#191622] to-[#121218] p-6 sm:p-10">
             <div
               aria-hidden="true"
@@ -421,6 +540,44 @@ function TournamentDetail() {
               </div>
             )}
           </section>
+
+          {isOwner && (
+            <section className="rounded-2xl border border-red-400/20 bg-[#17171e] p-6 sm:p-8">
+              <h2 className="text-xl font-bold text-white">
+                Administración del torneo
+              </h2>
+
+              <p className="mt-2 text-sm leading-6 text-zinc-400">
+                Como organizador, puedes eliminar este torneo y todas las
+                inscripciones asociadas.
+              </p>
+
+              {deleteError && (
+                <p
+                  role="alert"
+                  className="mt-4 rounded-xl border border-red-400/20 bg-red-400/5 p-3 text-sm text-red-300"
+                >
+                  {deleteError}
+                </p>
+              )}
+
+              {!canDelete ? (
+                <p className="mt-4 text-sm text-amber-300">
+                  No puedes eliminar el torneo durante las últimas 24 horas
+                  antes de su inicio ni después de que haya comenzado.
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleDeleteTournament}
+                  disabled={isDeleting}
+                  className="mt-5 rounded-xl border border-red-400/30 bg-red-400/10 px-5 py-3 text-sm font-semibold text-red-300 transition hover:bg-red-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {isDeleting ? 'Eliminando torneo...' : 'Eliminar torneo'}
+                </button>
+              )}
+            </section>
+          )}
 
           <section className="rounded-2xl border border-white/10 bg-[#17171e] p-6 sm:p-8">
             <h2 className="text-xl font-bold text-white">
