@@ -47,4 +47,13 @@ export class TournamentsController {
     ) {
         return this.tournamentsService.leaveTournament(id, req.user.userId);
     }
+
+    @Delete(':id')
+    @UseGuards(JwtAuthGuard)
+    deleteTournament(
+        @Param('id', new ParseUUIDPipe()) id: string,
+        @Req() req: Request & { user: { userId: string } },
+    ) {
+        return this.tournamentsService.deleteTournament(id, req.user.userId);
+    }
 }
