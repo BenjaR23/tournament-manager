@@ -2,7 +2,7 @@ import { jest } from "@jest/globals";
 import { Test } from "@nestjs/testing";
 import { TournamentsService } from "./tournaments.service.js";
 import { PrismaService } from "../prisma/prisma.service.js";
-import { BadRequestException, NotFoundException, ConflictException } from "@nestjs/common";
+import { BadRequestException, NotFoundException, ConflictException, ForbiddenException } from "@nestjs/common";
 import { TournamentFormat } from "../generated/prisma/enums.js";
 
 describe('TournamentsService', () => {
@@ -38,7 +38,9 @@ describe('TournamentsService', () => {
                 id: string,
                 startsAt: Date,
                 maxPlayers?: number,
+                ownerId?: string
             }>>(),
+            delete: jest.fn<() => Promise<{ id: string }>>(),
         },
         game: {
             findUnique: jest.fn<() => Promise<{ id: string } | null>>(),
@@ -558,5 +560,94 @@ describe('TournamentsService', () => {
         ).rejects.toThrow(NotFoundException);
 
         expect(prisma.tournamentParticipant.delete).not.toHaveBeenCalled();
-    })
+    });
+
+    it('should delete a tournament successfully', async () => {
+        const tournamentId = 'tournament-123';
+        const userId = 'user-123';
+
+        prisma.$queryRaw.mockResolvedValue([{ id: tournamentId }]);
+        prisma.tournament.findUnique.mockResolvedValue({
+            id: tournamentId,
+            ownerId: userId,
+            startsAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+        });
+        prisma.tournament.delete.mockResolvedValue({ id: tournamentId });
+
+        const result = await tournamentsService.deleteTournament(
+            tournamentId,
+            userId,
+        );
+
+        expect(result).toEqual({
+            message: 'Tournament deleted successfully',
+            tournamentId,
+        });
+
+        expect(prisma.tournament.delete).toHaveBeenCalledWith({
+            where: { id: tournamentId },
+        });
+    });
+
+    it('should reject deleting a tournament that does not exist', async () => {
+        prisma.$queryRaw.mockResolvedValue([]);
+
+        await expect(
+            tournamentsService.deleteTournament('missing-tournament', 'user-123'),
+        ).rejects.toThrow(NotFoundException);
+
+        expect(prisma.tournament.findUnique).not.toHaveBeenCalled();
+        expect(prisma.tournament.delete).not.toHaveBeenCalled();
+    });
+
+    it('should reject deleting a tournament owned by another user', async () => {
+        const tournamentId = 'tournament-123';
+
+        prisma.$queryRaw.mockResolvedValue([{ id: tournamentId }]);
+        prisma.tournament.findUnique.mockResolvedValue({
+            id: tournamentId,
+            ownerId: 'another-user',
+            startsAt: new Date(Date.now() + 48 * 60 * 60 *1000),
+        });
+
+        await expect(
+            tournamentsService.deleteTournament(tournamentId, 'user-123'),
+        ).rejects.toThrow(ForbiddenException);
+
+        expect(prisma.tournament.delete).not.toHaveBeenCalled();
+    });
+
+    it('should reject deleting a tournament when less than 24 hours remain', async () => {
+        const tournamentId = 'tournament-123';
+
+        prisma.$queryRaw.mockResolvedValue([{ id: tournamentId }]);
+        prisma.tournament.findUnique.mockResolvedValue({
+            id: tournamentId,
+            ownerId: 'user-123',
+            startsAt: new Date(Date.now() + 12 * 60 * 60 * 1000),
+        });
+
+        await expect(
+            tournamentsService.deleteTournament(tournamentId, 'user-123'),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(prisma.tournament.delete).not.toHaveBeenCalled();
+    });
+
+    it('should reject deleting a tournament that has already started', async () => {
+        const tournamentId = 'tournamend-123';
+
+        prisma.$queryRaw.mockResolvedValue([{ id: tournamentId }]);
+        prisma.tournament.findUnique.mockResolvedValue({
+            id: tournamentId,
+            ownerId: 'user-123',
+            startsAt: new Date(Date.now() - 60_000),
+        });
+
+        await expect(
+            tournamentsService.deleteTournament(tournamentId, 'user-123'),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(prisma.tournament.delete).not.toHaveBeenCalled();
+    });
 });

@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException, ConflictException } from "@nestjs/common";
+import { Injectable, BadRequestException, NotFoundException, ConflictException, ForbiddenException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { fromZonedTime } from 'date-fns-tz';
 import { CreateTournamentDto } from "./dto/create-tournament.dto.js";
@@ -412,5 +412,66 @@ export class TournamentsService {
                 message: 'You have left the tournament successfully',
             };
         });
+    }
+
+    async deleteTournament(tournamentId: string, userId: string) {
+        return this.prismaService.$transaction(async (tx) => {
+            const tournaments = await tx.$queryRaw<{ id: string}[]>`
+                SELECT "id"
+                FROM "Tournament"
+                WHERE "id" = ${tournamentId}
+                FOR UPDATE
+            `;
+
+            if(tournaments.length === 0) {
+                throw new NotFoundException('Tournament not found')
+            }
+
+            const tournament = await tx.tournament.findUnique({
+                select: {
+                    id: true,
+                    ownerId: true,
+                    startsAt: true,
+                },
+                where: {
+                    id: tournamentId
+                },
+            });
+
+            if (!tournament) {
+                throw new NotFoundException('Tournament not found')
+            }
+
+            if (tournament.ownerId !== userId) {
+                throw new ForbiddenException('User is not owner')
+            }
+
+            const now = Date.now();
+            const startsAt = tournament.startsAt.getTime();
+            const minimumNotice = 24 * 60 * 60 * 1000;
+
+            if (startsAt <= now) {
+                throw new BadRequestException(
+                    'You cannot delete a tournament that has already started',
+                );
+            }
+
+            if (startsAt - now < minimumNotice) {
+                throw new BadRequestException(
+                    'You can only delete a tournament at least 24 hours before it starts'
+                );
+            }
+
+            const deletedTournament = await tx.tournament.delete({
+                where: {
+                    id: tournamentId
+                },
+            });
+
+            return {
+                message: 'Tournament deleted successfully',
+                tournamentId: deletedTournament.id,
+            };
+        })
     }
 }
