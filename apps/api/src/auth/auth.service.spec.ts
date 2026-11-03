@@ -10,6 +10,19 @@ import { hash } from "argon2";
 describe('AuthService', () => {
     let authService: AuthService;
 
+    const transaction = {
+        tournament: {
+            deleteMany: jest.fn<(
+                args: { where: { ownerId: string } }
+            ) => Promise<{ count: number }>>(),
+        },
+        user: {
+            delete: jest.fn<(
+                args: { where: { id: string } },
+            ) => Promise<{ id: string }>>(),
+        },
+    };
+
     const prisma = {
         user: {
             findFirst: jest.fn<(
@@ -47,7 +60,16 @@ describe('AuthService', () => {
                 email: string,
                 createdAt: Date,
             }>>(),
+            findUnique: jest.fn<(
+                args: {
+                    where: { id: string };
+                    select: { id: true; passwordHash: true };
+                }
+            ) => Promise<{ id: string; passwordHash: string } | null>>(),
         },
+        $transaction: jest.fn<(
+            callback: (tx: typeof transaction) => Promise<unknown>
+        ) => Promise<unknown>>(),
     };
 
     const jwtServiceMock = {
@@ -200,7 +222,7 @@ describe('AuthService', () => {
             email: user.email,
         });
         expect(jwtServiceMock.signAsync).toHaveBeenCalledWith({ sub: user.id });
-    })
+    });
 
     it('should reject login when user does not exist', async () => {
         prisma.user.findFirst.mockResolvedValue(null);
@@ -213,7 +235,7 @@ describe('AuthService', () => {
         ).rejects.toThrow(UnauthorizedException);
 
         expect(jwtServiceMock.signAsync).not.toHaveBeenCalled();
-    })
+    });
 
     it('should reject login when password is incorrect', async () => {
         const password = 'test123';
@@ -236,5 +258,71 @@ describe('AuthService', () => {
         ).rejects.toThrow(UnauthorizedException);
 
         expect(jwtServiceMock.signAsync).not.toHaveBeenCalled();
-    })
+    });
+
+    it('should delete account and owned tournaments successfully', async () => {
+        const userId = 'user-123';
+        const password = 'password123';
+        const passwordHash = await hash(password);
+
+        prisma.user.findUnique.mockResolvedValue({
+            id: userId,
+            passwordHash,
+        });
+
+        transaction.tournament.deleteMany.mockResolvedValue({ count: 2 });
+        transaction.user.delete.mockResolvedValue({ id: userId });
+
+        prisma.$transaction.mockImplementation((callback) => callback(transaction));
+
+        const result = await authService.deleteAccount(userId, password);
+
+        expect(result).toEqual({
+            message: 'Account deleted successfully',
+        });
+
+        expect(prisma.user.findUnique).toHaveBeenCalledWith({
+            where: { id: userId },
+            select: {
+                id: true,
+                passwordHash: true,
+            },
+        });
+
+        expect(transaction.tournament.deleteMany).toHaveBeenCalledWith({
+            where: { ownerId: userId },
+        });
+
+        expect (transaction.user.delete).toHaveBeenCalledWith({
+            where: { id: userId },
+        });
+
+        expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('should reject account deletion when password is incorrect', async () => {
+        const userId = 'user-123';
+        const passwordHash = await hash('correct-password');
+
+        prisma.user.findUnique.mockResolvedValue({
+            id: userId,
+            passwordHash,
+        });
+
+        await expect(
+            authService.deleteAccount(userId, 'wrong-password'),
+        ).rejects.toThrow(UnauthorizedException);
+
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should reject account deletion when user does not exist', async () => {
+        prisma.user.findUnique.mockResolvedValue(null);
+
+        await expect(
+            authService.deleteAccount('unknown-user', 'password123'),
+        ).rejects.toThrow(UnauthorizedException);
+
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
 });

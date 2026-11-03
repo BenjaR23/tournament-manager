@@ -90,4 +90,44 @@ export class AuthService {
             },
         };
     }
+
+    async deleteAccount(userId: string, password: string) {
+        const user = await this.prismaService.user.findUnique({
+            where: {
+                id: userId,
+            },
+            select: {
+                id: true,
+                passwordHash: true,
+            },
+        });
+
+        if (!user) {
+            throw new UnauthorizedException('Invalid credentials.');
+        }
+
+        const isPasswordValid = await verify(user.passwordHash, password);
+
+        if (!isPasswordValid) {
+            throw new UnauthorizedException('Invalid credentials.');
+        }
+
+        await this.prismaService.$transaction(async (tx) => {
+            await tx.tournament.deleteMany({
+                where: {
+                    ownerId: userId,
+                },
+            });
+
+            await tx.user.delete({
+                where: {
+                    id: userId,
+                },
+            });
+        });
+
+        return {
+            message: 'Account deleted successfully',
+        };
+    }
 }
