@@ -1,19 +1,24 @@
-
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router'
 import { useAuth } from '../../context/auth-context'
+import { DeleteAccountModal } from '../auth/DeleteAccountModal'
 
 function Navbar() {
   const { user, isAuthenticated, logout } = useAuth()
   const navigate = useNavigate()
+
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false)
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false)
+  const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] =
+    useState(false)
 
   useEffect(() => {
-    if (!isLogoutModalOpen) return
+    if (!isLogoutModalOpen && !isAccountMenuOpen) return
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         setIsLogoutModalOpen(false)
+        setIsAccountMenuOpen(false)
       }
     }
 
@@ -22,12 +27,18 @@ function Navbar() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isLogoutModalOpen])
+  }, [isLogoutModalOpen, isAccountMenuOpen])
 
   function handleLogout() {
     logout()
     setIsLogoutModalOpen(false)
+    setIsAccountMenuOpen(false)
     navigate('/', { replace: true })
+  }
+
+  function handleOpenDeleteAccount() {
+    setIsAccountMenuOpen(false)
+    setIsDeleteAccountModalOpen(true)
   }
 
   return (
@@ -66,17 +77,66 @@ function Navbar() {
                   Crear torneo
                 </Link>
 
-                <span className="hidden text-sm text-zinc-300 md:inline">
-                  {user?.username}
-                </span>
+                <div className="relative">
+                  <button
+                    type="button"
+                    aria-haspopup="true"
+                    aria-expanded={isAccountMenuOpen}
+                    onClick={() =>
+                      setIsAccountMenuOpen((current) => !current)
+                    }
+                    className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm font-medium text-zinc-300 transition hover:bg-white/5 hover:text-white"
+                  >
+                    <span>{user?.username}</span>
 
-                <button
-                  type="button"
-                  onClick={() => setIsLogoutModalOpen(true)}
-                  className="text-sm font-medium text-zinc-400 transition hover:text-white"
-                >
-                  Cerrar sesión
-                </button>
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 20 20"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      className={`h-4 w-4 transition-transform ${
+                        isAccountMenuOpen ? 'rotate-180' : ''
+                      }`}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M5 7.5l5 5 5-5"
+                      />
+                    </svg>
+                  </button>
+
+                  {isAccountMenuOpen && (
+                    <div
+                      role="menu"
+                      className="absolute right-0 top-full z-[60] mt-2 w-48 overflow-hidden rounded-xl border border-white/10 bg-[#17171e] py-1 shadow-xl shadow-black/30"
+                    >
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setIsAccountMenuOpen(false)
+                          setIsLogoutModalOpen(true)
+                        }}
+                        className="w-full px-4 py-2.5 text-left text-sm text-zinc-300 transition hover:bg-white/5 hover:text-white"
+                      >
+                        Cerrar sesión
+                      </button>
+
+                      <div className="mx-3 border-t border-white/10" />
+
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={handleOpenDeleteAccount}
+                        className="w-full px-4 py-2.5 text-left text-sm text-red-400 transition hover:bg-red-500/10 hover:text-red-300"
+                      >
+                        Eliminar cuenta
+                      </button>
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
               <>
@@ -99,6 +159,7 @@ function Navbar() {
         </nav>
       </header>
 
+      {/* Modal de cierre de sesión */}
       {isLogoutModalOpen && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
@@ -169,6 +230,12 @@ function Navbar() {
           </section>
         </div>
       )}
+
+      {/* Modal de eliminación de cuenta */}
+      <DeleteAccountModal
+        isOpen={isDeleteAccountModalOpen}
+        onClose={() => setIsDeleteAccountModalOpen(false)}
+      />
     </>
   )
 }
