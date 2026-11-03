@@ -67,6 +67,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }, [])
 
+  async function deleteAccount(password: string): Promise<void> {
+    await apiFetch<{ message: string }>('/auth/me', {
+      method: 'DELETE',
+      body: JSON.stringify({ password }),
+    })
+
+    logout()
+  }
+
   useEffect(() => {
     function handleSessionExpired() {
       logout()
@@ -90,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated: user !== null,
     login,
     register,
+    deleteAccount,
     logout,
   }
 
