@@ -1,10 +1,12 @@
+
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "services": {
     "api": {
       "root": "apps/api",
       "framework": "nestjs",
-      "entrypoint": "src/main.ts"
+      "entrypoint": "src/main.ts",
+      "outputDirectory": "."
     },
     "web": {
       "root": "apps/web",
@@ -14,15 +16,11 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": {
-        "service": "api"
-      }
+      "destination": { "service": "api" }
     },
     {
       "source": "/(.*)",
-      "destination": {
-        "service": "web"
-      }
+      "destination": { "service": "web" }
     }
   ]
 }
